@@ -30,14 +30,16 @@
 #include "common.h"
 
 PSP_MODULE_INFO("PSPotify ME", 0, 2, 0);
-/* Heap = all free user memory except 4 MB. A fixed 24 MB heap only fit
+/* Heap = all free user memory except 8 MB. A fixed 24 MB heap only fit
  * with ARK's "highmem:forcemax"; on a default 24 MB user partition it
  * crashed before main. The 8 MB covers what is allocated outside the heap
  * after start-up (net/AV modules ~0.6 MB measured, thread stacks, kcall).
- * The SFO asks for extended memory (MEMSIZE 1) where the firmware allows. */
-/* (4 MB was not enough on hardware: 768 KB free at main, 82 KB max block
- * after net init, too small for the 128 KB player thread stack.) */
-PSP_HEAP_SIZE_KB(-8192);
+ * The SFO asks for extended memory (MEMSIZE 1) where the firmware allows.
+ * libcglue ignores the magnitude of a negative heap size: any negative
+ * value means "max free memory minus the threshold", and the threshold
+ * defaults to 512 KB (which left 82 KB after network start on hardware). */
+PSP_HEAP_SIZE_KB(-1);
+PSP_HEAP_THRESHOLD_SIZE_KB(8192);
 PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER);
 #define TIMEOUT_US 2000000u
 #define FAIL_TARGET -1001
