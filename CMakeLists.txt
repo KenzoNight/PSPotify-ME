@@ -99,5 +99,6 @@ create_pbp_file(
     TARGET psp-dualcore-actions
     TITLE "PSPotify ME"
     VERSION "02.00"
+    MEMSIZE 1
     BUILD_PRX
 )

@@ -30,11 +30,12 @@
 #include "common.h"
 
 PSP_MODULE_INFO("PSPotify ME", 0, 2, 0);
-/* Fixed heap: a negative (leave-N) size still left only ~146 KB free after
- * ME/AV/net init on hardware, too little for the HTTP/SSL net modules.
- * 24 MB holds a whole Ogg file (160 kbps: ~1.2 MB per minute) in RAM and
- * still leaves ~16 MB for firmware modules. */
-PSP_HEAP_SIZE_KB(24576);
+/* Heap = all free user memory except 4 MB. A fixed 24 MB heap only fit
+ * with ARK's "highmem:forcemax"; on a default 24 MB user partition it
+ * crashed before main. The 4 MB covers what is allocated outside the heap
+ * after start-up (net/AV modules ~0.6 MB measured, thread stacks, kcall).
+ * The SFO asks for extended memory (MEMSIZE 1) where the firmware allows. */
+PSP_HEAP_SIZE_KB(-4096);
 PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER);
 #define TIMEOUT_US 2000000u
 #define FAIL_TARGET -1001
