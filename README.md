@@ -36,6 +36,7 @@ Requires **Spotify Premium**.
 |---|---|
 | Console | PSP-3000 family (tested on a PSP-3000) |
 | Firmware | 6.61 with ARK CFW. The Media Engine bring-up refuses any other firmware. |
+| Memory | Works with the default memory layout; ARK's extra-memory (highmem) option is not needed. |
 | Network | A Wi-Fi profile saved in the PSP's network settings |
 | Account | Spotify Premium |
 
