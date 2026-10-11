@@ -1,5 +1,6 @@
 #include "handshake.h"
 #include "log.h"
+#include "http.h"
 #include "dh.h"
 #include "sha1.h"
 #include <string.h>
@@ -87,6 +88,11 @@ static const uint8_t *find_gs_key(const uint8_t *data, size_t len)
 
 /* Try to resolve a single AP hostname. Returns 0 on success. */
 static int resolve_host(const char *host, struct in_addr *out_addr)
+{
+    return net_resolve(host, out_addr);
+}
+
+static int __attribute__((unused)) resolve_host_direct(const char *host, struct in_addr *out_addr)
 {
     char res_buf[1024];
     int rid = -1;

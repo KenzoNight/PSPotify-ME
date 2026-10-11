@@ -58,8 +58,13 @@ static int volume_pct = 80;
 /* Album cover of the playing track (UI thread only). */
 #define COVER_SIZE 64
 static unsigned int cover_px[COVER_SIZE * COVER_SIZE];
-static int cover_ok;
+static volatile int cover_ok;
 static char cover_track[24];
+/* Covers load on their own thread: a slow i.scdn.co response or DNS lookup
+ * froze the UI (and, through a shared lock, the next track) on hardware. */
+static spotify_track cover_request;
+static volatile unsigned int cover_request_seq, cover_done_seq;
+static volatile int cover_dirty;
 
 /* ------------------------------------------------------------ helpers */
 
@@ -245,7 +250,26 @@ static void load_cover(const spotify_track *t)
         }
     stbi_image_free(rgba);
     cover_ok = 1;
+    cover_dirty = 1;
     log_printf("UI: cover %dx%d\n", w, h);
+}
+
+static int cover_thread(SceSize args, void *argp)
+{
+    (void)args;
+    (void)argp;
+    static spotify_track job;
+    while (!player_quit) {
+        unsigned int seq = cover_request_seq;
+        if (seq == cover_done_seq) {
+            sceKernelDelayThread(50000);
+            continue;
+        }
+        job = cover_request;
+        load_cover(&job);
+        cover_done_seq = seq;
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------ rendering */
@@ -386,6 +410,8 @@ int spotify_ui_run(volatile int *exit_requested)
     load_playlists();
 
     SceUID thid = sceKernelCreateThread("player", player_thread, 0x1C, 0x20000, 0, NULL);
+    SceUID cover_thid = sceKernelCreateThread("cover", cover_thread, 0x30, 0x20000, 0, NULL);
+    if (cover_thid >= 0) sceKernelStartThread(cover_thid, 0, NULL);
     if (thid >= 0) sceKernelStartThread(thid, 0, NULL);
 
     unsigned int previous = 0, held_frames = 0, frame = 0;
@@ -444,8 +470,15 @@ int spotify_ui_run(volatile int *exit_requested)
 
         /* New track: fetch its cover (blocks this thread briefly). */
         int playing = current_index;
-        if (playing >= 0 && playing < queue_len && strcmp(cover_track, queue[playing].id) != 0) {
-            load_cover(&queue[playing]);
+        static char requested[24];
+        if (playing >= 0 && playing < queue_len && strcmp(requested, queue[playing].id) != 0) {
+            snprintf(requested, sizeof requested, "%s", queue[playing].id);
+            cover_request = queue[playing];
+            ++cover_request_seq;
+            dirty = 1;
+        }
+        if (cover_dirty) {
+            cover_dirty = 0;
             dirty = 1;
         }
 
@@ -461,6 +494,12 @@ int spotify_ui_run(volatile int *exit_requested)
     log_printf("UI: exit requested\n");
     message_screen("Stopping...", NULL);
     player_quit = 1;
+    if (cover_thid >= 0) {
+        SceUInt cover_timeout = 20u * 1000u * 1000u;
+        if (sceKernelWaitThreadEnd(cover_thid, &cover_timeout) < 0)
+            sceKernelTerminateThread(cover_thid);
+        sceKernelDeleteThread(cover_thid);
+    }
     control.stop = 1;
     if (thid >= 0) {
         SceUInt timeout = 25u * 1000u * 1000u;

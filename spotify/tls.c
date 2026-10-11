@@ -23,6 +23,7 @@ struct tls_conn {
 static unsigned char entropy_pool[32];
 static uint32_t entropy_counter;
 static int entropy_ready;
+static SceUID seed_lock = -1;
 
 void tls_seed_entropy(void)
 {
@@ -50,11 +51,14 @@ void tls_seed_entropy(void)
     }
     br_sha256_out(&h, entropy_pool);
     entropy_ready = 1;
+    /* Several threads open TLS connections (UI covers, player, prefetch). */
+    if (seed_lock < 0) seed_lock = sceKernelCreateSema("tls_seed", 0, 1, 1, NULL);
 }
 
 static void connection_seed(unsigned char out[32])
 {
     if (!entropy_ready) tls_seed_entropy();
+    if (seed_lock >= 0) sceKernelWaitSema(seed_lock, 1, NULL);
     br_sha256_context h;
     br_sha256_init(&h);
     br_sha256_update(&h, entropy_pool, sizeof entropy_pool);
@@ -63,6 +67,7 @@ static void connection_seed(unsigned char out[32])
     SceInt64 now = sceKernelGetSystemTimeWide();
     br_sha256_update(&h, &now, sizeof now);
     br_sha256_out(&h, out);
+    if (seed_lock >= 0) sceKernelSignalSema(seed_lock, 1);
 }
 
 static int sock_read(void *ctx, unsigned char *buf, size_t len)

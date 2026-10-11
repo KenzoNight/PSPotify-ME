@@ -21,13 +21,55 @@ typedef struct {
     char path[1024];
 } url_parts;
 
-/* Request setup uses static URL/redirect state; the UI and player threads
- * both open requests, so serialise it (reads after open need no lock). */
-static SceUID open_lock = -1;
+/* Only DNS is serialised: the PSP resolver is not known to be safe from
+ * several threads at once. Requests themselves run in parallel (a slow
+ * cover download must not hold up the audio stream). */
+static SceUID dns_lock = -1;
+
+/* Small DNS cache: the same few hosts (spclient, CDNs, i.scdn.co) are looked
+ * up for every track. */
+#define DNS_CACHE_SIZE 8
+#define DNS_TTL_US (10ll * 60 * 1000 * 1000)
+static struct {
+    char host[64];
+    struct in_addr addr;
+    SceInt64 at;
+} dns_cache[DNS_CACHE_SIZE];
+static unsigned int dns_next;
+
+int net_resolve(const char *host, struct in_addr *out)
+{
+    SceInt64 now = sceKernelGetSystemTimeWide();
+    if (dns_lock >= 0) sceKernelWaitSema(dns_lock, 1, NULL);
+    for (int i = 0; i < DNS_CACHE_SIZE; ++i) {
+        if (dns_cache[i].host[0] && strcmp(dns_cache[i].host, host) == 0 &&
+            now - dns_cache[i].at < DNS_TTL_US) {
+            *out = dns_cache[i].addr;
+            if (dns_lock >= 0) sceKernelSignalSema(dns_lock, 1);
+            return 0;
+        }
+    }
+    char res_buf[1024];
+    int rid = -1;
+    int ret = sceNetResolverCreate(&rid, res_buf, sizeof res_buf);
+    if (ret >= 0) {
+        log_printf("HTTP: resolving %s\n", host);
+        ret = sceNetResolverStartNtoA(rid, host, out, 5, 3);
+        sceNetResolverDelete(rid);
+    }
+    if (ret >= 0 && strlen(host) < sizeof dns_cache[0].host) {
+        unsigned int slot = dns_next++ % DNS_CACHE_SIZE;
+        snprintf(dns_cache[slot].host, sizeof dns_cache[slot].host, "%s", host);
+        dns_cache[slot].addr = *out;
+        dns_cache[slot].at = now;
+    }
+    if (dns_lock >= 0) sceKernelSignalSema(dns_lock, 1);
+    return ret;
+}
 
 int http_init(void)
 {
-    if (open_lock < 0) open_lock = sceKernelCreateSema("http_open", 0, 1, 1, NULL);
+    if (dns_lock < 0) dns_lock = sceKernelCreateSema("dns", 0, 1, 1, NULL);
     SceInt64 t0 = sceKernelGetSystemTimeWide();
     tls_seed_entropy();
     log_printf("HTTP: TLS entropy seeded in %u ms\n",
@@ -68,17 +110,11 @@ static int parse_url(const char *url, url_parts *u)
 
 static int tcp_connect(const char *host, unsigned short port)
 {
-    char res_buf[1024];
-    int rid = -1;
-    int ret = sceNetResolverCreate(&rid, res_buf, sizeof res_buf);
-    if (ret < 0) return ret;
     struct sockaddr_in sin;
     memset(&sin, 0, sizeof sin);
     sin.sin_family = AF_INET;
     sin.sin_port = PSP_HTONS(port);
-    log_printf("HTTP: resolving %s\n", host);
-    ret = sceNetResolverStartNtoA(rid, host, &sin.sin_addr, 5, 3);
-    sceNetResolverDelete(rid);
+    int ret = net_resolve(host, &sin.sin_addr);
     if (ret < 0) {
         log_printf("HTTP: DNS %s failed 0x%08X\n", host, (unsigned int)ret);
         return ret;
@@ -255,12 +291,12 @@ static int open_once(http_stream *s, const char *method, const url_parts *u,
     return status;
 }
 
-static int open_ex_unlocked(http_stream *s, const char *method, const char *url,
+int http_stream_open_ex(http_stream *s, const char *method, const char *url,
                         const char *extra_headers, const void *body, size_t body_len,
                         uint64_t *content_length)
 {
-    static url_parts u;
-    static char location[1024];
+    url_parts u;
+    char location[1024];
     *content_length = 0;
     s->sock = -1;
     s->tls = NULL;
@@ -297,16 +333,6 @@ static int open_ex_unlocked(http_stream *s, const char *method, const char *url,
     }
     log_printf("HTTP: too many redirects\n");
     return -8;
-}
-
-int http_stream_open_ex(http_stream *s, const char *method, const char *url,
-                        const char *extra_headers, const void *body, size_t body_len,
-                        uint64_t *content_length)
-{
-    if (open_lock >= 0) sceKernelWaitSema(open_lock, 1, NULL);
-    int r = open_ex_unlocked(s, method, url, extra_headers, body, body_len, content_length);
-    if (open_lock >= 0) sceKernelSignalSema(open_lock, 1);
-    return r;
 }
 
 int http_stream_open(http_stream *s, const char *url, uint64_t *content_length)

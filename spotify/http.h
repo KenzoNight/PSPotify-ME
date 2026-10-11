@@ -22,6 +22,11 @@ typedef struct {
     size_t buf_pos, buf_len;
 } http_stream;
 
+struct in_addr;
+/* DNS lookup with a short cache, serialised across threads. Returns < 0 on
+ * failure. Used for HTTP and for the Spotify access point. */
+int net_resolve(const char *host, struct in_addr *out);
+
 /* Seeds TLS entropy. Call once after the network is up. */
 int http_init(void);
 void http_term(void);

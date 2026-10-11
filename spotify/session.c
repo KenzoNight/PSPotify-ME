@@ -33,6 +33,13 @@ static int oauth(spotify_ctx *c, const spotify_ui_hooks *ui)
     if (c->cfg.refresh_token[0]) {
         ret = spotify_oauth_refresh(c->cfg.refresh_token, c->web_token, sizeof c->web_token,
                                     refresh, sizeof refresh);
+    } else if (c->cfg.blob_len > 0 &&
+               strcmp(c->cfg.blob_client, SPOTIFY_CLIENT_ID_KEYMASTER) == 0) {
+        /* No refresh token, but a keymaster-client blob signs in without
+         * OAuth (spclient and login5 do not need the OAuth token). */
+        log_printf("SESSION: no refresh token, using stored credentials\n");
+        c->web_token[0] = '\0';
+        return -1;
     } else {
         say(ui, "Pairing with Spotify...");
         ret = spotify_oauth_device_pair(c->web_token, sizeof c->web_token,
