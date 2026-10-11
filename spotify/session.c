@@ -39,6 +39,14 @@ static int oauth(spotify_ctx *c, const spotify_ui_hooks *ui)
                                         refresh, sizeof refresh,
                                         ui ? ui->pair_code : NULL);
     }
+    if (ret == SPOTIFY_OAUTH_INVALID_GRANT) {
+        /* Dead refresh token: drop it so the stored blob is used without a
+         * failed request every start (pairing runs again if there is no
+         * blob either). */
+        c->cfg.refresh_token[0] = '\0';
+        spotify_config_save_blob(&c->cfg, c->cfg.username, c->cfg.blob, c->cfg.blob_len);
+        if (c->cfg.blob_len == 0) return oauth(c, ui);   /* pair again now */
+    }
     if (ret < 0) {
         c->web_token[0] = '\0';
         return ret;

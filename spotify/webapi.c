@@ -213,7 +213,9 @@ static int spotify_oauth_refresh_unlocked(const char *refresh_token, char *acces
         char error[64] = "";
         flat_json_string((const char *)resp_buf, "error", error, sizeof error);
         log_printf("OAUTH: refresh failed (HTTP %d %s)\n", status, error);
-        return -2;
+        /* invalid_grant: the token was revoked or rotated away (e.g. by
+         * another copy of spotify.cfg); the caller should forget it. */
+        return strcmp(error, "invalid_grant") == 0 ? SPOTIFY_OAUTH_INVALID_GRANT : -2;
     }
     return token_response(access_token, access_cap, new_refresh, refresh_cap);
 }

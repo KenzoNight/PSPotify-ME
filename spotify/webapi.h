@@ -44,6 +44,7 @@ int spotify_client_token(const char *client_id, char *out, size_t cap);
 int spotify_oauth_device_pair(char *access_token, size_t access_cap,
                               char *refresh_token, size_t refresh_cap,
                               void (*show_code)(const char *user_code));
+#define SPOTIFY_OAUTH_INVALID_GRANT (-3)
 int spotify_oauth_refresh(const char *refresh_token, char *access_token, size_t access_cap,
                           char *new_refresh, size_t refresh_cap);
 int spotify_login5(const char *client_id, const char *client_token, const char *username,
