@@ -115,10 +115,6 @@ BL, SD, unknown images, partial inspection failures and firmware other than
 
 Everything is logged to `spotify.log` next to the EBOOT. Bug reports with that file attached are very welcome.
 
-The log may contain your Spotify username, track names/IDs and network addresses.
-Passwords, tokens, authentication blobs, audio keys and pairing codes are not
-written to the log. Review it before sharing; never attach `spotify.cfg`.
-
 ## Contributing
 
 Contributions of any size are welcome: bug reports, fixes, features, testing on other models.
